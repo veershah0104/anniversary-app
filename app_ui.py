@@ -10,8 +10,17 @@ import random
 import requests # Only for Weather
 from groq import Groq
 
-# --- 🧠 THE AI BRAIN (Directly inside the file) ---
-# This fixes the "NameError" completely.
+# --- CONFIG ---
+NEXT_MEET_DATE = datetime(2026, 5, 20) 
+STATUS_FILE = "status_db.json"
+
+# Coordinates (Hong Kong -> Canterbury)
+MY_LAT, MY_LON = 22.2988, 114.1722   # Hong Kong
+HER_LAT, HER_LON = 51.2955, 1.0586   # Canterbury
+MY_CITY = "Hong Kong"
+HER_CITY = "Canterbury"
+
+# --- 🧠 THE AI BRAIN (Embedded & Robust) ---
 def generate_groq_response(system_prompt, user_prompt):
     # Get API Key securely
     api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
@@ -33,16 +42,77 @@ def generate_groq_response(system_prompt, user_prompt):
     except Exception as e:
         return f"AI Error: {str(e)}"
 
-# --- CONFIG ---
-NEXT_MEET_DATE = datetime(2026, 5, 20) 
-STATUS_FILE = "status_db.json"
+# --- AI WRAPPERS (With Your Custom Prompts) ---
+def get_ai_letter(mood):
+    nickname = random.choice(["Rishi", "Chokri"])
+    
+    system_instruction = (
+        f"You are me who's name is Veer. You are writing a short, sweet note to your girlfriend, {nickname}. "
+        "Context: We have been in Long-distance relationship since the past 3 years and My girlfriend will be reading the note, so say something that would make her smile"
 
-# Coordinates (Hong Kong -> Canterbury)
-MY_LAT, MY_LON = 22.2988, 114.1722   # Hong Kong
-HER_LAT, HER_LON = 51.2955, 1.0586   # Canterbury
-MY_CITY = "Hong Kong"
-HER_CITY = "Canterbury"
+        "TONE GUIDELINES (STRICT):"
+        "1. Write EXACTLY like a real person who would write short cute letters. Casual, warm, and authentic."
+        "2. DO NOT use 'AI words' like: testament, unwavering, profound, tapestry, symphony, beacon, merely, dwelling and dont be too formal"
+        "3. Use contractions (use 'I'm' instead of 'I am', 'can't' instead of 'cannot')."
+        "4. Focus on small, real feelings (missing her voice, craving food, wanting a hug, missing cuddling, wish I was beside her) rather than 'eternal soul' stuff."
+        "5. Be slightly witty or teasing, not overly dramatic."
+        "6. the specific feeling is the feeling my girlfriend is feeling NOT ME, so make sure that is shes having a bad day you comfort her"
+        "7. Make sure the note is related to the specific feeling and it should sound like I am talking to her."
+        "8. DO NOT MAKE A STORY UP SUCH AS I AM HAVING A BAD DAY and stuff like that"
+        "9. dont be too cringe and lovey dovey, if shes feeling flirty you can match that energy and talk dirty"
 
+        f" MANDATORY FORMAT:"
+        f"- Start with: ' Dear {nickname},'"
+        "- End with: '- Forever yours, Veer'"
+    )
+    
+    user_prompt = f"Write a note about this specific feeling: {mood}. Keep it under 80 words."
+
+    return generate_groq_response(system_instruction, user_prompt)
+
+def get_ai_date(duration, vibe):
+    system_instruction = (
+        "You are an expert dating coach for long-distance couples. "
+        "Suggest ONE creative, specific virtual date idea based on the user's constraints. "
+        "Format guidelines: \n"
+        "1. Start with a catchy **Title** in bold.\n"
+        "2. Provide a short, exciting description of what they will do.\n"
+        "3. Mention any prep needed.\n"
+        "4. Keep it fun and actionable."
+        "5. if the choosen vibe is lets say gaming then tell me a game I can play for free online"
+        "6. tell me exactly how to get the date done, what platform to use, and any other details."
+        "7. If romantic and sexy vibe is picked then you can give 18+ date ideas and something lusty, Doesnt always have to be lusty tho it can just be cute and romantic"
+        "8. Dont give me the same date idea again and again, try be unique"
+        "9. if the same prompt is given again then think of something new maybe a new game or a new version of something that was similar"
+    )
+    
+    user_prompt = f"Plan a date with this Duration: {duration}. And this Vibe: {vibe}."
+    
+    # 1. Try AI
+    ai_result = generate_groq_response(system_instruction, user_prompt)
+    
+    # 2. Check for Failure
+    if "AI Error" in ai_result or "Quota exceeded" in ai_result:
+        # Fallback Logic
+        return get_backup_date(duration, vibe)
+    
+    return ai_result
+
+# --- BACKUP DATE SYSTEM ---
+BACKUP_DATES = [
+    {"duration": "30 Mins", "vibe": "Lazy", "idea": "**Coffee & Crossword**\nFind a crossword online (like NYT mini). Screen share and solve it together while sipping coffee. No rush, just teamwork."},
+    {"duration": "1 Hour", "vibe": "Active", "idea": "**The Wikipedia Race**\nStart at the same random Wikipedia page. Race to get to the page for 'Steve Jobs' using only blue links. Loser buys dinner next visit!"},
+    {"duration": "2 Hours", "vibe": "Romantic", "idea": "**Dinner & A Movie (Synced)**\nOrder the exact same cuisine (e.g., Thai). Start a movie on 'Teleparty' or count down '3, 2, 1' to press play. Eat and watch together."},
+    {"duration": "Any", "vibe": "Any", "idea": "**PowerPoint Night**\nMake a silly 5-slide presentation on a random topic (e.g., 'Why I would survive a zombie apocalypse') and present it to each other."}
+]
+
+def get_backup_date(duration, vibe):
+    matches = [d for d in BACKUP_DATES if duration in d["duration"] and vibe in d["vibe"]]
+    if not matches:
+        return random.choice(BACKUP_DATES)["idea"]
+    return random.choice(matches)["idea"]
+
+# --- APP SETUP ---
 st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 🎨 VISUAL STYLING (CSS FIXED) ---
@@ -55,7 +125,6 @@ st.markdown("""
     h1, h2, h3, p, div, span, label { color: #E0E0E0 !important; }
     
     /* 3. INPUT BOXES (Fix for Date Planner) */
-    /* This ensures dropdown text is readable */
     .stSelectbox div[data-baseweb="select"] {
         color: white !important;
         background-color: #262730 !important;
@@ -94,7 +163,6 @@ st.markdown("""
     .weather-card { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
 
     /* 6. LOVE LETTER (The "White on White" Fix) */
-    /* We explicitly force BLACK text inside the yellow note */
     .love-note {
         background-color: #fff9c4 !important;
         padding: 25px;
@@ -107,7 +175,7 @@ st.markdown("""
         border-left: 5px solid #ffeb3b;
         margin-top: 20px;
     }
-    /* This rule overrides the global white text rule for the note content */
+    /* Explicitly force BLACK text inside the note */
     .love-note, .love-note div, .love-note p, .love-note span {
         color: #2c2c2c !important; 
     }
@@ -134,7 +202,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- INTERNAL FUNCTIONS ---
-
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -171,32 +238,12 @@ def save_db(data):
     with open(STATUS_FILE, "w") as f:
         json.dump(data, f)
 
-# --- AI WRAPPERS ---
-def get_ai_letter(mood):
-    nickname = random.choice(["Rishi", "Chokri"])
-    prompt = (
-        f"You are Veer writing to {nickname}. LDR 3 years. "
-        "Write a short, casual, authentic note. No formal AI words. "
-        "Use contractions (I'm, can't). Be sweet or teasing. "
-        f"Topic: {mood}. End with '- Forever yours, Veer'"
-    )
-    return generate_groq_response(prompt, "Write the note.")
-
-def get_ai_date(duration, vibe):
-    prompt = (
-        "Suggest ONE specific virtual date idea. "
-        "Format: **Title**\nDescription. "
-        f"Constraints: {duration}, {vibe}."
-    )
-    return generate_groq_response(prompt, "Plan the date.")
-
 def get_rating_color(rating):
     if rating >= 8: return "#69F0AE" 
     if rating >= 4: return "#FFD740" 
     return "#FF5252" 
 
 # --- MAIN APP UI ---
-
 st.title("❤️ Relationship Sync")
 
 # 1. LOAD DATA
@@ -304,7 +351,7 @@ with tab1:
         vibe = None
         if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
         if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
-        if st.button("🌧️ Bad Day", use_container_width=True): vibe = "Cheer me up, I had a hard day"
+        if st.button("🌧️ Bad Day", use_container_width=True): vibe = "She had a hard day, comfort her"
         if st.button("🔥 Flirty", use_container_width=True): vibe = "Feeling flirty and romantic"
     with col_t2:
         if vibe:
@@ -327,7 +374,7 @@ with tab2:
     with col_d1:
         date_duration = st.selectbox("How much time?", ["30 Mins", "1 Hour", "2 Hours", "All Night"])
     with col_d2:
-        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic", "Deep Talk", "Gaming"])
+        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic & Sexy", "Deep Talk", "Gaming"])
     
     if st.button("Plan Our Date 🎟️", use_container_width=True):
         with st.spinner("Thinking..."):
