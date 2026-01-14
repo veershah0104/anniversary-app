@@ -344,14 +344,16 @@ tab1, tab2 = st.tabs(["💌 Anytime Love Letter", "🎲 AI Date Planner"])
 
 with tab1:
     st.markdown("### ✨ Need a little love?")
-    col_t1, col_t2 = st.columns([1, 2])
-    with col_t1:
-        st.write("Pick a vibe:")
-        vibe = None
-        if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
-        if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
-        if st.button("🌧️ Bad Day", use_container_width=True): vibe = "She had a hard day, comfort her"
-        if st.button("🔥 Flirty", use_container_width=True): vibe = "Feeling flirty and romantic"
+    st.write("Pick a vibe:")
+    
+    # We use columns to stack them nicely or simple vertical stack
+    # Using 'use_container_width=True' makes them full width like your image
+    
+    vibe = None
+    if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
+    if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
+    if st.button("🌧️ Bad Day", use_container_width=True): vibe = "She had a hard day, comfort her"
+    if st.button("🔥 Flirty", use_container_width=True): vibe = "Feeling flirty and romantic"
     with col_t2:
         if vibe:
             with st.spinner("Penning a note..."):
