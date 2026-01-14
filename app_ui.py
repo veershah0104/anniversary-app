@@ -7,16 +7,31 @@ import math
 import json
 import os
 import random
-import requests # Only for Weather (External API)
+import requests # Only for Weather
+from groq import Groq
 
-# --- IMPORT YOUR EXISTING AI BRAIN DIRECTLY ---
-# We talk directly to the Python file, not over the internet
-try:
-    from app.services.llm import generate_gpt_response
-except ImportError:
-    # Fallback if folder structure is different on cloud
-    # (This assumes app/services/llm.py exists in the repo)
-    pass 
+# --- 🧠 THE AI BRAIN (Directly inside the file) ---
+# This fixes the "NameError" completely.
+def generate_groq_response(system_prompt, user_prompt):
+    # Get API Key securely
+    api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+    
+    if not api_key:
+        return "⚠️ Error: Missing Groq API Key. Please add it to Streamlit Secrets."
+
+    try:
+        client = Groq(api_key=api_key)
+        completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.7,
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        return f"AI Error: {str(e)}"
 
 # --- CONFIG ---
 NEXT_MEET_DATE = datetime(2026, 5, 20) 
@@ -28,20 +43,26 @@ HER_LAT, HER_LON = 51.2955, 1.0586   # Canterbury
 MY_CITY = "Hong Kong"
 HER_CITY = "Canterbury"
 
-# Force Dark Theme in Config
 st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 🎨 VISUAL STYLING (CSS - FIXED COLORS) ---
+# --- 🎨 VISUAL STYLING (CSS FIXED) ---
 st.markdown("""
 <style>
-    /* Force Dark Background */
+    /* 1. Main Background -> Dark */
     .stApp { background-color: #0E1117; }
     
-    /* Text Color Fixes - Force White */
-    h1, h2, h3, p, div, span { color: #FFFFFF !important; }
-    .stTextInput > label, .stSelectbox > label { color: #FFFFFF !important; }
+    /* 2. General Text -> White (For dashboard) */
+    h1, h2, h3, p, div, span, label { color: #E0E0E0 !important; }
     
-    /* SYNC CARDS */
+    /* 3. INPUT BOXES (Fix for Date Planner) */
+    /* This ensures dropdown text is readable */
+    .stSelectbox div[data-baseweb="select"] {
+        color: white !important;
+        background-color: #262730 !important;
+    }
+    .stSelectbox label { font-size: 1.2rem; font-weight: bold; }
+
+    /* 4. SYNC CARDS */
     .mood-card {
         background-color: #1E1E1E;
         padding: 20px;
@@ -55,7 +76,7 @@ st.markdown("""
     .mood-text { font-size: 18px; color: #DDD !important; font-style: italic; margin: 10px 0; }
     .rating-box { font-size: 16px; font-weight: bold; padding: 5px 15px; border-radius: 20px; color: #000 !important; display: inline-block; margin-top: 10px;}
 
-    /* INFO CARDS */
+    /* 5. INFO CARDS */
     .info-card {
         padding: 15px;
         border-radius: 12px;
@@ -68,15 +89,14 @@ st.markdown("""
     .card-value { font-size: 28px; font-weight: 800; margin-top: 5px; color: #FFF !important; }
     .card-sub { font-size: 12px; opacity: 0.8; color: #EEE !important; }
 
-    /* Gradients */
     .dist-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
     .time-card { background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); }
     .weather-card { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
 
-    /* LOVE LETTER */
+    /* 6. LOVE LETTER (The "White on White" Fix) */
+    /* We explicitly force BLACK text inside the yellow note */
     .love-note {
-        background-color: #fff9c4;
-        color: #4a4a4a !important; /* Force Dark Text for Note */
+        background-color: #fff9c4 !important;
         padding: 25px;
         border-radius: 2px;
         box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
@@ -87,10 +107,18 @@ st.markdown("""
         border-left: 5px solid #ffeb3b;
         margin-top: 20px;
     }
-    .love-note * { color: #4a4a4a !important; } /* Ensure all inner text is dark */
-    .note-signature { text-align: right; font-weight: bold; margin-top: 15px; color: #d32f2f !important; }
+    /* This rule overrides the global white text rule for the note content */
+    .love-note, .love-note div, .love-note p, .love-note span {
+        color: #2c2c2c !important; 
+    }
+    .note-signature { 
+        text-align: right; 
+        font-weight: bold; 
+        margin-top: 15px; 
+        color: #d32f2f !important; /* Red Signature */
+    }
 
-    /* DATE TICKET */
+    /* 7. DATE TICKET */
     .date-card {
         background-color: #262730;
         border: 2px dashed #FF4B4B;
@@ -105,7 +133,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INTERNAL FUNCTIONS (Direct Logic) ---
+# --- INTERNAL FUNCTIONS ---
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371
@@ -119,12 +147,12 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 def get_weather(lat, lon):
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
-        resp = requests.get(url, timeout=5) # 5 sec timeout
+        resp = requests.get(url, timeout=5)
         return resp.json()["current_weather"]
     except:
         return {"temperature": "--"}
 
-# --- DATABASE LOGIC (Local JSON File) ---
+# --- DATABASE LOGIC ---
 DEFAULT_DB = {
     "Veer": {"mood": "Missing you", "rating": 5},
     "Rishi": {"mood": "Excited for the weekend", "rating": 8}
@@ -143,7 +171,7 @@ def save_db(data):
     with open(STATUS_FILE, "w") as f:
         json.dump(data, f)
 
-# --- AI WRAPPER ---
+# --- AI WRAPPERS ---
 def get_ai_letter(mood):
     nickname = random.choice(["Rishi", "Chokri"])
     prompt = (
@@ -152,8 +180,7 @@ def get_ai_letter(mood):
         "Use contractions (I'm, can't). Be sweet or teasing. "
         f"Topic: {mood}. End with '- Forever yours, Veer'"
     )
-    # Call imported function directly
-    return generate_gpt_response(prompt, "Write the note.")
+    return generate_groq_response(prompt, "Write the note.")
 
 def get_ai_date(duration, vibe):
     prompt = (
@@ -161,8 +188,7 @@ def get_ai_date(duration, vibe):
         "Format: **Title**\nDescription. "
         f"Constraints: {duration}, {vibe}."
     )
-    # Call imported function directly
-    return generate_gpt_response(prompt, "Plan the date.")
+    return generate_groq_response(prompt, "Plan the date.")
 
 def get_rating_color(rating):
     if rating >= 8: return "#69F0AE" 
