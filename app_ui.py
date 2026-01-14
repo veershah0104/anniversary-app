@@ -63,6 +63,7 @@ def get_ai_letter(mood):
 
         f" MANDATORY FORMAT:"
         f"- Start with: ' Dear {nickname},'"
+        "- End with: '- Forever yours, Veer'"
     )
     
     user_prompt = f"Write a note about this specific feeling: {mood}. Keep it under 80 words."
@@ -123,14 +124,32 @@ st.markdown("""
     /* 2. General Text -> White (For dashboard) */
     h1, h2, h3, p, div, span, label { color: #E0E0E0 !important; }
     
-    /* 3. INPUT BOXES (Fix for Date Planner) */
-    .stSelectbox div[data-baseweb="select"] {
+    /* 3. DARK BUTTON STYLE (Like your reference image) */
+    div.stButton > button {
+        background-color: #161B22 !important; /* Dark Github-like grey */
         color: white !important;
-        background-color: #262730 !important;
+        border: 1px solid #30363D !important;
+        border-radius: 8px;
+        padding: 10px 24px;
+        font-size: 16px;
+        transition: all 0.2s ease-in-out;
+        width: 100%; /* Full width */
+        margin-bottom: 10px;
     }
-    .stSelectbox label { font-size: 1.2rem; font-weight: bold; }
+    div.stButton > button:hover {
+        border-color: #8B949E !important; 
+        background-color: #21262D !important; 
+        color: #58A6FF !important; 
+    }
 
-    /* 4. SYNC CARDS */
+    /* 4. INPUT BOXES (Fix for Date Planner) */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #262730 !important;
+        color: white !important;
+    }
+    .stSelectbox label, .stTextInput label { color: #E0E0E0 !important; }
+
+    /* 5. SYNC CARDS */
     .mood-card {
         background-color: #1E1E1E;
         padding: 20px;
@@ -144,7 +163,7 @@ st.markdown("""
     .mood-text { font-size: 18px; color: #DDD !important; font-style: italic; margin: 10px 0; }
     .rating-box { font-size: 16px; font-weight: bold; padding: 5px 15px; border-radius: 20px; color: #000 !important; display: inline-block; margin-top: 10px;}
 
-    /* 5. INFO CARDS */
+    /* 6. INFO CARDS */
     .info-card {
         padding: 15px;
         border-radius: 12px;
@@ -161,7 +180,7 @@ st.markdown("""
     .time-card { background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); }
     .weather-card { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
 
-    /* 6. LOVE LETTER (The "White on White" Fix) */
+    /* 7. LOVE LETTER (The "White on White" Fix) */
     .love-note {
         background-color: #fff9c4 !important;
         padding: 25px;
@@ -185,13 +204,13 @@ st.markdown("""
         color: #d32f2f !important; /* Red Signature */
     }
 
-    /* 7. DATE TICKET */
+    /* 8. DATE TICKET */
     .date-card {
         background-color: #262730;
         border: 2px dashed #FF4B4B;
         border-radius: 12px;
         padding: 25px;
-        color: #FFFFFF !important;
+        color: #EEE !important;
         margin-top: 15px;
         text-align: center;
         font-size: 18px;
@@ -346,27 +365,25 @@ with tab1:
     st.markdown("### ✨ Need a little love?")
     st.write("Pick a vibe:")
     
-    # We use columns to stack them nicely or simple vertical stack
-    # Using 'use_container_width=True' makes them full width like your image
-    
+    # Updated: Full-width stacked buttons (No columns needed for stacking)
     vibe = None
     if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
     if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
     if st.button("🌧️ Bad Day", use_container_width=True): vibe = "She had a hard day, comfort her"
     if st.button("🔥 Flirty", use_container_width=True): vibe = "Feeling flirty and romantic"
-    with col_t2:
-        if vibe:
-            with st.spinner("Penning a note..."):
-                try:
-                    content = get_ai_letter(vibe)
-                    st.markdown(f"""
+
+    if vibe:
+        with st.spinner("Penning a note..."):
+            try:
+                content = get_ai_letter(vibe)
+                st.markdown(f"""
 <div class="love-note">
 {content.replace(chr(10), '<br>')}
 <div class="note-signature">- Forever yours, Veer</div>
 </div>
 """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Groq Error: {e}")
+            except Exception as e:
+                st.error(f"Groq Error: {e}")
 
 with tab2:
     st.header("The Teleport Deck 🎲")
