@@ -1,37 +1,26 @@
 # app_ui.py
 import streamlit as st
-import requests
 import pandas as pd
 import pydeck as pdk
 from datetime import datetime
 import math
-import subprocess
-import sys
-import time
+import json
 import os
+import random
+import requests # Only for Weather (External API)
 
-# --- 🚀 CLOUD AUTO-BOOTSTRAPPER ---
-# This block ensures the Backend starts automatically when the app loads on the cloud
-def start_backend():
-    # Check if backend is already running
-    try:
-        requests.get("http://127.0.0.1:8000")
-        return # It's running!
-    except:
-        # Not running? Start it in the background!
-        subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        time.sleep(3) # Give it 3 seconds to wake up
-
-start_backend()
-# ------------------------------------
+# --- IMPORT YOUR EXISTING AI BRAIN DIRECTLY ---
+# We talk directly to the Python file, not over the internet
+try:
+    from app.services.llm import generate_gpt_response
+except ImportError:
+    # Fallback if folder structure is different on cloud
+    # (This assumes app/services/llm.py exists in the repo)
+    pass 
 
 # --- CONFIG ---
-API_URL = "http://127.0.0.1:8000"
 NEXT_MEET_DATE = datetime(2026, 5, 20) 
+STATUS_FILE = "status_db.json"
 
 # Coordinates (Hong Kong -> Canterbury)
 MY_LAT, MY_LON = 22.2988, 114.1722   # Hong Kong
@@ -39,12 +28,18 @@ HER_LAT, HER_LON = 51.2955, 1.0586   # Canterbury
 MY_CITY = "Hong Kong"
 HER_CITY = "Canterbury"
 
-st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide")
+# Force Dark Theme in Config
+st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 🎨 VISUAL STYLING (CSS) ---
+# --- 🎨 VISUAL STYLING (CSS - FIXED COLORS) ---
 st.markdown("""
 <style>
+    /* Force Dark Background */
     .stApp { background-color: #0E1117; }
+    
+    /* Text Color Fixes - Force White */
+    h1, h2, h3, p, div, span { color: #FFFFFF !important; }
+    .stTextInput > label, .stSelectbox > label { color: #FFFFFF !important; }
     
     /* SYNC CARDS */
     .mood-card {
@@ -56,22 +51,22 @@ st.markdown("""
         margin-bottom: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    .user-name { font-size: 24px; font-weight: bold; color: #FFF; margin-bottom: 5px;}
-    .mood-text { font-size: 18px; color: #DDD; font-style: italic; margin: 10px 0; }
-    .rating-box { font-size: 16px; font-weight: bold; padding: 5px 15px; border-radius: 20px; color: #000; display: inline-block; margin-top: 10px;}
+    .user-name { font-size: 24px; font-weight: bold; color: #FFF !important; margin-bottom: 5px;}
+    .mood-text { font-size: 18px; color: #DDD !important; font-style: italic; margin: 10px 0; }
+    .rating-box { font-size: 16px; font-weight: bold; padding: 5px 15px; border-radius: 20px; color: #000 !important; display: inline-block; margin-top: 10px;}
 
     /* INFO CARDS */
     .info-card {
         padding: 15px;
         border-radius: 12px;
         margin-bottom: 12px;
-        color: white;
+        color: white !important;
         text-align: center;
         box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     }
-    .card-title { font-size: 14px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 5px; color: #FFF; }
-    .card-value { font-size: 28px; font-weight: 800; margin-top: 5px; color: #FFF; }
-    .card-sub { font-size: 12px; opacity: 0.8; color: #EEE; }
+    .card-title { font-size: 14px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 5px; color: #FFF !important; }
+    .card-value { font-size: 28px; font-weight: 800; margin-top: 5px; color: #FFF !important; }
+    .card-sub { font-size: 12px; opacity: 0.8; color: #EEE !important; }
 
     /* Gradients */
     .dist-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
@@ -81,7 +76,7 @@ st.markdown("""
     /* LOVE LETTER */
     .love-note {
         background-color: #fff9c4;
-        color: #4a4a4a;
+        color: #4a4a4a !important; /* Force Dark Text for Note */
         padding: 25px;
         border-radius: 2px;
         box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
@@ -92,15 +87,16 @@ st.markdown("""
         border-left: 5px solid #ffeb3b;
         margin-top: 20px;
     }
-    .note-signature { text-align: right; font-weight: bold; margin-top: 15px; color: #d32f2f; }
+    .love-note * { color: #4a4a4a !important; } /* Ensure all inner text is dark */
+    .note-signature { text-align: right; font-weight: bold; margin-top: 15px; color: #d32f2f !important; }
 
-    /* DATE TICKET STYLE */
+    /* DATE TICKET */
     .date-card {
         background-color: #262730;
         border: 2px dashed #FF4B4B;
         border-radius: 12px;
         padding: 25px;
-        color: #EEE;
+        color: #EEE !important;
         margin-top: 15px;
         text-align: center;
         font-size: 18px;
@@ -109,7 +105,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HELPERS ---
+# --- INTERNAL FUNCTIONS (Direct Logic) ---
+
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -119,51 +116,93 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return int(R * c)
 
-def get_data():
+def get_weather(lat, lon):
     try:
-        w_my = requests.get(f"{API_URL}/dashboard/weather", params={"lat": MY_LAT, "lon": MY_LON}).json()
-        w_her = requests.get(f"{API_URL}/dashboard/weather", params={"lat": HER_LAT, "lon": HER_LON}).json()
-        statuses = requests.get(f"{API_URL}/dashboard/statuses").json()
-        return w_my, w_her, statuses
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+        resp = requests.get(url, timeout=5) # 5 sec timeout
+        return resp.json()["current_weather"]
     except:
-        return None, None, None
+        return {"temperature": "--"}
+
+# --- DATABASE LOGIC (Local JSON File) ---
+DEFAULT_DB = {
+    "Veer": {"mood": "Missing you", "rating": 5},
+    "Rishi": {"mood": "Excited for the weekend", "rating": 8}
+}
+
+def load_db():
+    if not os.path.exists(STATUS_FILE):
+        return DEFAULT_DB
+    try:
+        with open(STATUS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return DEFAULT_DB
+
+def save_db(data):
+    with open(STATUS_FILE, "w") as f:
+        json.dump(data, f)
+
+# --- AI WRAPPER ---
+def get_ai_letter(mood):
+    nickname = random.choice(["Rishi", "Chokri"])
+    prompt = (
+        f"You are Veer writing to {nickname}. LDR 3 years. "
+        "Write a short, casual, authentic note. No formal AI words. "
+        "Use contractions (I'm, can't). Be sweet or teasing. "
+        f"Topic: {mood}. End with '- Forever yours, Veer'"
+    )
+    # Call imported function directly
+    return generate_gpt_response(prompt, "Write the note.")
+
+def get_ai_date(duration, vibe):
+    prompt = (
+        "Suggest ONE specific virtual date idea. "
+        "Format: **Title**\nDescription. "
+        f"Constraints: {duration}, {vibe}."
+    )
+    # Call imported function directly
+    return generate_gpt_response(prompt, "Plan the date.")
 
 def get_rating_color(rating):
     if rating >= 8: return "#69F0AE" 
     if rating >= 4: return "#FFD740" 
     return "#FF5252" 
 
-# --- MAIN UI ---
+# --- MAIN APP UI ---
+
 st.title("❤️ Relationship Sync")
 
-my_w, her_w, statuses = get_data()
+# 1. LOAD DATA
+db = load_db()
+w_my = get_weather(MY_LAT, MY_LON)
+w_her = get_weather(HER_LAT, HER_LON)
 
-# 1. TOP SECTION: SYNC CARDS
-if statuses:
-    c1, c2 = st.columns(2)
-    with c1:
-        veer = statuses.get("Veer", {})
-        col = get_rating_color(veer.get('rating', 5))
-        st.markdown(f"""
+# 2. SYNC CARDS
+c1, c2 = st.columns(2)
+with c1:
+    veer = db.get("Veer", {})
+    col = get_rating_color(veer.get('rating', 5))
+    st.markdown(f"""
 <div class="mood-card">
 <div class="user-name">🧑‍💻 Veer</div>
-<div class="mood-text">"{veer.get('mood', 'Loading...')}"</div>
+<div class="mood-text">"{veer.get('mood')}"</div>
 <div class="rating-box" style="background-color: {col};">Feels: {veer.get('rating')}/10</div>
 </div>
 """, unsafe_allow_html=True)
-        
-    with c2:
-        rishi = statuses.get("Rishi", {})
-        col = get_rating_color(rishi.get('rating', 5))
-        st.markdown(f"""
+    
+with c2:
+    rishi = db.get("Rishi", {})
+    col = get_rating_color(rishi.get('rating', 5))
+    st.markdown(f"""
 <div class="mood-card">
 <div class="user-name">👩‍❤️‍👨 Rishi</div>
-<div class="mood-text">"{rishi.get('mood', 'Loading...')}"</div>
+<div class="mood-text">"{rishi.get('mood')}"</div>
 <div class="rating-box" style="background-color: {col};">Feels: {rishi.get('rating')}/10</div>
 </div>
 """, unsafe_allow_html=True)
 
-# Update form
+# 3. UPDATE FORM
 with st.expander("📝 Update Status"):
     col_u1, col_u2 = st.columns([1, 2])
     with col_u1:
@@ -173,20 +212,14 @@ with st.expander("📝 Update Status"):
         msg = st.text_input("Mood", placeholder="Status update...")
         if st.button("Sync 🔄", use_container_width=True):
             if msg:
-                try:
-                    resp = requests.post(f"{API_URL}/dashboard/update", json={"user": who, "mood": msg, "rating": rate})
-                    resp.raise_for_status()
-                    st.success("Updated!")
-                    st.rerun()
-                except requests.exceptions.RequestException as e:
-                    st.error(f"Connection failed: {e}")
-                except Exception as e:
-                    if "Rerun" not in str(type(e)): st.error(f"Error: {e}")
-                    else: raise e
+                db[who] = {"mood": msg, "rating": rate}
+                save_db(db)
+                st.success("Updated!")
+                st.rerun()
 
 st.divider()
 
-# 2. MIDDLE SECTION
+# 4. MAP & INFO
 st.subheader("🌍 Live Connection")
 col_map, col_info = st.columns([2.5, 1])
 
@@ -220,8 +253,8 @@ with col_info:
 </div>
 """, unsafe_allow_html=True)
 
-    t1 = my_w['temperature'] if my_w else "--"
-    t2 = her_w['temperature'] if her_w else "--"
+    t1 = w_my.get('temperature', '--')
+    t2 = w_her.get('temperature', '--')
     st.markdown(f"""
 <div class="info-card weather-card">
 <div class="card-title">Current Weather</div>
@@ -233,7 +266,7 @@ with col_info:
 </div>
 """, unsafe_allow_html=True)
 
-# 3. BOTTOM SECTION
+# 5. FEATURES TABS
 st.divider()
 tab1, tab2 = st.tabs(["💌 Anytime Love Letter", "🎲 AI Date Planner"])
 
@@ -251,41 +284,33 @@ with tab1:
         if vibe:
             with st.spinner("Penning a note..."):
                 try:
-                    res = requests.post(f"{API_URL}/ai/love-letter", json={"mood": vibe}).json()
-                    content = res["ai_message"]
+                    content = get_ai_letter(vibe)
                     st.markdown(f"""
 <div class="love-note">
 {content.replace(chr(10), '<br>')}
 <div class="note-signature">- Forever yours, Veer</div>
 </div>
 """, unsafe_allow_html=True)
-                except:
-                    st.error("AI is sleeping.")
-        else:
-            st.info("👈 Tap a vibe button to generate a letter!")
+                except Exception as e:
+                    st.error(f"Groq Error: {e}")
 
 with tab2:
     st.header("The Teleport Deck 🎲")
     st.write("Let the AI plan your perfect virtual date.")
-    
     col_d1, col_d2 = st.columns(2)
     with col_d1:
-        date_duration = st.selectbox("How much time do you have?", 
-                                     ["30 Mins (Quick)", "1 Hour (Standard)", "2 Hours (Movie/Game)", "All Night (Event)"])
+        date_duration = st.selectbox("How much time?", ["30 Mins", "1 Hour", "2 Hours", "All Night"])
     with col_d2:
-        date_vibe = st.selectbox("What's the vibe?", 
-                                 ["Lazy & Chill", "Active & Fun", "Romantic & Sexy", "Deep Talk", "Gaming", "Competitive"])
+        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic", "Deep Talk", "Gaming"])
     
     if st.button("Plan Our Date 🎟️", use_container_width=True):
-        with st.spinner("Consulting the Cupid Algorithm..."):
+        with st.spinner("Thinking..."):
             try:
-                payload = {"duration": date_duration, "vibe": date_vibe}
-                res = requests.post(f"{API_URL}/dates/generate", json=payload).json()
-                idea = res["date_idea"]
+                idea = get_ai_date(date_duration, date_vibe)
                 st.markdown(f"""
 <div class="date-card">
 {idea.replace(chr(10), '<br>')}
 </div>
 """, unsafe_allow_html=True)
             except Exception as e:
-                st.error(f"Backend Error: {e}")
+                st.error(f"Groq Error: {e}")
