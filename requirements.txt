@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+streamlit
+requests
+pandas
+pydeck
+groq
+python-dotenv
+pydantic
