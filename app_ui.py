@@ -63,7 +63,6 @@ def get_ai_letter(mood):
 
         f" MANDATORY FORMAT:"
         f"- Start with: ' Dear {nickname},'"
-        "- End with: '- Forever yours, Veer'"
     )
     
     user_prompt = f"Write a note about this specific feeling: {mood}. Keep it under 80 words."
@@ -192,7 +191,7 @@ st.markdown("""
         border: 2px dashed #FF4B4B;
         border-radius: 12px;
         padding: 25px;
-        color: #EEE !important;
+        color: #FFFFFF !important;
         margin-top: 15px;
         text-align: center;
         font-size: 18px;
