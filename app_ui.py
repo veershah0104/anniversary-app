@@ -9,12 +9,10 @@ import os
 import random
 import requests # Only for Weather
 from groq import Groq
+from streamlit_gsheets import GSheetsConnection
 
 # --- CONFIG ---
 NEXT_MEET_DATE = datetime(2026, 5, 20) 
-STATUS_FILE = "status_db.json"
-
-# Coordinates (Hong Kong -> Canterbury)
 MY_LAT, MY_LON = 22.2988, 114.1722   # Hong Kong
 HER_LAT, HER_LON = 51.2955, 1.0586   # Canterbury
 MY_CITY = "Hong Kong"
@@ -41,6 +39,55 @@ def generate_groq_response(system_prompt, user_prompt):
         return completion.choices[0].message.content
     except Exception as e:
         return f"AI Error: {str(e)}"
+
+# --- ☁️ GOOGLE SHEETS DATABASE (The New Sync Logic) ---
+def get_db_connection():
+    return st.connection("gsheets", type=GSheetsConnection)
+
+def load_db():
+    """Reads data from Google Sheet"""
+    try:
+        conn = get_db_connection()
+        # Read the sheet as a DataFrame (cols: User, Mood, Rating, Photo)
+        df = conn.read(worksheet="Sheet1", usecols=[0, 1, 2, 3], ttl=0)
+        
+        # Convert to our dictionary format
+        db = {}
+        for _, row in df.iterrows():
+            # Handle potential empty rows
+            if pd.notna(row['User']):
+                db[row['User']] = {
+                    "mood": row['Mood'],
+                    "rating": int(row['Rating']) if pd.notna(row['Rating']) else 5,
+                    "photo": row['Photo'] if pd.notna(row['Photo']) else None
+                }
+        return db
+    except Exception as e:
+        # Fallback if sheet fails so app doesn't crash
+        return {"Veer": {"mood": "Offline", "rating": 5}, "Rishi": {"mood": "Offline", "rating": 5}}
+
+def save_db(user, mood, rating, photo=None):
+    """Writes specific user update to Google Sheet"""
+    try:
+        conn = get_db_connection()
+        df = conn.read(worksheet="Sheet1", usecols=[0, 1, 2, 3], ttl=0)
+        
+        # Identify Row Index (Veer=0, Rishi=1)
+        # This assumes the sheet is pre-filled with Veer in row 2 and Rishi in row 3
+        idx = 0 if user == "Veer" else 1
+        
+        # Update values
+        df.at[idx, "Mood"] = mood
+        df.at[idx, "Rating"] = rating
+        if photo:
+            df.at[idx, "Photo"] = photo
+            
+        # Push back to Google
+        conn.update(worksheet="Sheet1", data=df)
+        return True
+    except Exception as e:
+        st.error(f"Save Error: {e}")
+        return False
 
 # --- AI WRAPPERS (With Your Custom Prompts) ---
 def get_ai_letter(mood):
@@ -123,7 +170,7 @@ st.markdown("""
     /* 2. General Text -> White (For dashboard) */
     h1, h2, h3, p, div, span, label { color: #E0E0E0 !important; }
     
-    /* 3. DARK BUTTON STYLE (Like your reference image) */
+    /* 3. DARK BUTTON STYLE */
     div.stButton > button {
         background-color: #161B22 !important; /* Dark Github-like grey */
         color: white !important;
@@ -236,25 +283,6 @@ def get_weather(lat, lon):
     except:
         return {"temperature": "--"}
 
-# --- DATABASE LOGIC ---
-DEFAULT_DB = {
-    "Veer": {"mood": "Missing you", "rating": 5},
-    "Rishi": {"mood": "Excited for the weekend", "rating": 8}
-}
-
-def load_db():
-    if not os.path.exists(STATUS_FILE):
-        return DEFAULT_DB
-    try:
-        with open(STATUS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return DEFAULT_DB
-
-def save_db(data):
-    with open(STATUS_FILE, "w") as f:
-        json.dump(data, f)
-
 def get_rating_color(rating):
     if rating >= 8: return "#69F0AE" 
     if rating >= 4: return "#FFD740" 
@@ -263,7 +291,7 @@ def get_rating_color(rating):
 # --- MAIN APP UI ---
 st.title("❤️ Relationship Sync")
 
-# 1. LOAD DATA
+# 1. LOAD DATA (FROM GOOGLE SHEETS)
 db = load_db()
 w_my = get_weather(MY_LAT, MY_LON)
 w_her = get_weather(HER_LAT, HER_LON)
@@ -276,8 +304,8 @@ with c1:
     st.markdown(f"""
 <div class="mood-card">
 <div class="user-name">🧑‍💻 Veer</div>
-<div class="mood-text">"{veer.get('mood')}"</div>
-<div class="rating-box" style="background-color: {col};">Feels: {veer.get('rating')}/10</div>
+<div class="mood-text">"{veer.get('mood', 'Loading...')}"</div>
+<div class="rating-box" style="background-color: {col};">Feels: {veer.get('rating', 5)}/10</div>
 </div>
 """, unsafe_allow_html=True)
     
@@ -287,12 +315,12 @@ with c2:
     st.markdown(f"""
 <div class="mood-card">
 <div class="user-name">👩‍❤️‍👨 Rishi</div>
-<div class="mood-text">"{rishi.get('mood')}"</div>
-<div class="rating-box" style="background-color: {col};">Feels: {rishi.get('rating')}/10</div>
+<div class="mood-text">"{rishi.get('mood', 'Loading...')}"</div>
+<div class="rating-box" style="background-color: {col};">Feels: {rishi.get('rating', 5)}/10</div>
 </div>
 """, unsafe_allow_html=True)
 
-# 3. UPDATE FORM
+# 3. UPDATE FORM (UPDATED TO USE GOOGLE SAVE_DB)
 with st.expander("📝 Update Status"):
     col_u1, col_u2 = st.columns([1, 2])
     with col_u1:
@@ -302,10 +330,12 @@ with st.expander("📝 Update Status"):
         msg = st.text_input("Mood", placeholder="Status update...")
         if st.button("Sync 🔄", use_container_width=True):
             if msg:
-                db[who] = {"mood": msg, "rating": rate}
-                save_db(db)
-                st.success("Updated!")
-                st.rerun()
+                with st.spinner("Syncing to Cloud..."):
+                    # Call the new Google Sheets save function
+                    success = save_db(who, msg, rate)
+                    if success:
+                        st.success("Updated!")
+                        st.rerun()
 
 st.divider()
 
@@ -364,7 +394,7 @@ with tab1:
     st.markdown("### ✨ Need a little love?")
     st.write("Pick a vibe:")
     
-    # Updated: Full-width stacked buttons (No columns needed for stacking)
+    # Updated: Full-width stacked buttons
     vibe = None
     if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
     if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
