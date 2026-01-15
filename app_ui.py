@@ -63,6 +63,8 @@ def upload_to_imgbb(image_file):
 def get_db_connection():
     return st.connection("gsheets", type=GSheetsConnection)
 
+# FIX 1: Add Caching to prevent Lag on every click
+@st.cache_data(ttl=60)
 def load_db():
     """Reads data from Google Sheet"""
     try:
@@ -107,6 +109,9 @@ def save_db(user, mood, rating, photo=None):
             
         # Push back to Google
         conn.update(worksheet="Sheet1", data=df)
+        
+        # FIX 2: Clear cache immediately so update shows
+        load_db.clear()
         return True
     except Exception as e:
         st.error(f"Save Error: {e}")
@@ -184,11 +189,21 @@ def get_backup_date(duration, vibe):
 # --- APP SETUP ---
 st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 🚀 SESSION STATE INIT (Fixes Memory Glitch) ---
+# FIX 3: Initialize Session State to prevent glitches
 if 'generated_letter' not in st.session_state:
     st.session_state.generated_letter = None
 if 'generated_date' not in st.session_state:
     st.session_state.generated_date = None
+
+# FIX 4: Callback functions to handle clicks without glitching
+def handle_letter_click(mood_text):
+    st.session_state.generated_letter = get_ai_letter(mood_text)
+
+def handle_date_click():
+    # Retrieve current selection from session state
+    d = st.session_state.date_duration
+    v = st.session_state.date_vibe
+    st.session_state.generated_date = get_ai_date(d, v)
 
 # --- 🎨 VISUAL STYLING (CSS FIXED) ---
 st.markdown("""
@@ -304,6 +319,8 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return int(R * c)
 
+# FIX 5: Cache weather to prevent lag
+@st.cache_data(ttl=3600)
 def get_weather(lat, lon):
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
@@ -417,28 +434,20 @@ with col_info:
 
 # 5. FEATURES TABS
 st.divider()
-# --- REORDERED TABS (LOVE LETTER FIRST, LOCKET LAST) ---
+# FIX 6: Reorder Tabs (Love Letter first, Locket last to prevent glitches)
 tab1, tab2, tab3 = st.tabs(["💌 Anytime Love Letter", "🎲 AI Date Planner", "📸 Locket"])
 
-# --- TAB 1: LOVE LETTER (WITH MEMORY FIX) ---
+# --- TAB 1: LOVE LETTER ---
 with tab1:
     st.markdown("### ✨ Need a little love?")
     st.write("Pick a vibe:")
     
-    # We use separate if-statements for buttons to set session state
-    if st.button("🥺 Missing You", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("Missing you deeply")
-    
-    if st.button("🥰 Just Because", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("Just wanted to say I love you")
-        
-    if st.button("🌧️ Bad Day", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("She had a hard day, comfort her")
-        
-    if st.button("🔥 Flirty", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("Feeling flirty and romantic")
+    # FIX 7: Use on_click to handle generation before reload
+    st.button("🥺 Missing You", use_container_width=True, on_click=handle_letter_click, args=("Missing you deeply",))
+    st.button("🥰 Just Because", use_container_width=True, on_click=handle_letter_click, args=("Just wanted to say I love you",))
+    st.button("🌧️ Bad Day", use_container_width=True, on_click=handle_letter_click, args=("She had a hard day, comfort her",))
+    st.button("🔥 Flirty", use_container_width=True, on_click=handle_letter_click, args=("Feeling flirty and romantic",))
 
-    # Display whatever is in memory (glitch prevention)
     if st.session_state.generated_letter:
         st.markdown(f"""
         <div class="love-note">
@@ -447,25 +456,20 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-# --- TAB 2: DATE PLANNER (WITH MEMORY FIX) ---
+# --- TAB 2: DATE PLANNER ---
 with tab2:
     st.header("The Teleport Deck 🎲")
     st.write("Let the AI plan your perfect virtual date.")
     col_d1, col_d2 = st.columns(2)
+    # FIX 8: Add keys to selectboxes so we can read them in the callback
     with col_d1:
-        date_duration = st.selectbox("How much time?", ["30 Mins", "1 Hour", "2 Hours", "All Night"])
+        date_duration = st.selectbox("How much time?", ["30 Mins", "1 Hour", "2 Hours", "All Night"], key="date_duration")
     with col_d2:
-        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic & Sexy", "Deep Talk", "Gaming"])
+        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic & Sexy", "Deep Talk", "Gaming"], key="date_vibe")
     
-    if st.button("Plan Our Date 🎟️", use_container_width=True):
-        with st.spinner("Thinking..."):
-            try:
-                # Save result to session state memory
-                st.session_state.generated_date = get_ai_date(date_duration, date_vibe)
-            except Exception as e:
-                st.error(f"Groq Error: {e}")
-
-    # Display whatever is in memory
+    # FIX 9: Use on_click for Date Planner
+    st.button("Plan Our Date 🎟️", use_container_width=True, on_click=handle_date_click)
+            
     if st.session_state.generated_date:
         st.markdown(f"""
         <div class="date-card">
@@ -473,7 +477,7 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
 
-# --- TAB 3: LOCKET (Moved to End to Prevent Glitch) ---
+# --- TAB 3: LOCKET (Moved to End) ---
 with tab3:
     st.markdown("### 📸 Live Locket")
     
