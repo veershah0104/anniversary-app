@@ -95,6 +95,7 @@ def save_db(user, mood, rating, photo=None):
         df = conn.read(worksheet="Sheet1", usecols=[0, 1, 2, 3], ttl=0)
         
         # Identify Row Index (Veer=0, Rishi=1)
+        # This assumes the sheet is pre-filled with Veer in row 2 and Rishi in row 3
         # We capitalize the input user to ensure we find the right match if needed
         idx = 0 if user.capitalize() == "Veer" else 1
         
@@ -183,7 +184,7 @@ def get_backup_date(duration, vibe):
 # --- APP SETUP ---
 st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 🚀 SESSION STATE INITIALIZATION (The Glitch Fix) ---
+# --- 🚀 SESSION STATE INIT (Fixes Memory Glitch) ---
 if 'generated_letter' not in st.session_state:
     st.session_state.generated_letter = None
 if 'generated_date' not in st.session_state:
@@ -416,10 +417,64 @@ with col_info:
 
 # 5. FEATURES TABS
 st.divider()
-tab1, tab2, tab3 = st.tabs(["📸 Locket", "💌 Anytime Love Letter", "🎲 AI Date Planner"])
+# --- REORDERED TABS (LOVE LETTER FIRST, LOCKET LAST) ---
+tab1, tab2, tab3 = st.tabs(["💌 Anytime Love Letter", "🎲 AI Date Planner", "📸 Locket"])
 
-# --- TAB 1: LOCKET (NEW) ---
+# --- TAB 1: LOVE LETTER (WITH MEMORY FIX) ---
 with tab1:
+    st.markdown("### ✨ Need a little love?")
+    st.write("Pick a vibe:")
+    
+    # We use separate if-statements for buttons to set session state
+    if st.button("🥺 Missing You", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("Missing you deeply")
+    
+    if st.button("🥰 Just Because", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("Just wanted to say I love you")
+        
+    if st.button("🌧️ Bad Day", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("She had a hard day, comfort her")
+        
+    if st.button("🔥 Flirty", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("Feeling flirty and romantic")
+
+    # Display whatever is in memory (glitch prevention)
+    if st.session_state.generated_letter:
+        st.markdown(f"""
+        <div class="love-note">
+        {st.session_state.generated_letter.replace(chr(10), '<br>')}
+        <div class="note-signature">- Forever yours, Veer</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# --- TAB 2: DATE PLANNER (WITH MEMORY FIX) ---
+with tab2:
+    st.header("The Teleport Deck 🎲")
+    st.write("Let the AI plan your perfect virtual date.")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        date_duration = st.selectbox("How much time?", ["30 Mins", "1 Hour", "2 Hours", "All Night"])
+    with col_d2:
+        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic & Sexy", "Deep Talk", "Gaming"])
+    
+    if st.button("Plan Our Date 🎟️", use_container_width=True):
+        with st.spinner("Thinking..."):
+            try:
+                # Save result to session state memory
+                st.session_state.generated_date = get_ai_date(date_duration, date_vibe)
+            except Exception as e:
+                st.error(f"Groq Error: {e}")
+
+    # Display whatever is in memory
+    if st.session_state.generated_date:
+        st.markdown(f"""
+        <div class="date-card">
+        {st.session_state.generated_date.replace(chr(10), '<br>')}
+        </div>
+        """, unsafe_allow_html=True)
+
+# --- TAB 3: LOCKET (Moved to End to Prevent Glitch) ---
+with tab3:
     st.markdown("### 📸 Live Locket")
     
     # Display Existing Photos
@@ -461,56 +516,3 @@ with tab1:
                     if success:
                         st.success("Posted!")
                         st.rerun()
-
-# --- TAB 2: LOVE LETTER (WITH MEMORY FIX) ---
-with tab2:
-    st.markdown("### ✨ Need a little love?")
-    st.write("Pick a vibe:")
-    
-    # We use separate if-statements for buttons to set session state
-    if st.button("🥺 Missing You", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("Missing you deeply")
-    
-    if st.button("🥰 Just Because", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("Just wanted to say I love you")
-        
-    if st.button("🌧️ Bad Day", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("She had a hard day, comfort her")
-        
-    if st.button("🔥 Flirty", use_container_width=True): 
-        st.session_state.generated_letter = get_ai_letter("Feeling flirty and romantic")
-
-    # Display whatever is in memory
-    if st.session_state.generated_letter:
-        st.markdown(f"""
-        <div class="love-note">
-        {st.session_state.generated_letter.replace(chr(10), '<br>')}
-        <div class="note-signature">- Forever yours, Veer</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# --- TAB 3: DATE PLANNER (WITH MEMORY FIX) ---
-with tab3:
-    st.header("The Teleport Deck 🎲")
-    st.write("Let the AI plan your perfect virtual date.")
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        date_duration = st.selectbox("How much time?", ["30 Mins", "1 Hour", "2 Hours", "All Night"])
-    with col_d2:
-        date_vibe = st.selectbox("Vibe?", ["Lazy", "Active", "Romantic & Sexy", "Deep Talk", "Gaming"])
-    
-    if st.button("Plan Our Date 🎟️", use_container_width=True):
-        with st.spinner("Thinking..."):
-            try:
-                # Save result to session state memory
-                st.session_state.generated_date = get_ai_date(date_duration, date_vibe)
-            except Exception as e:
-                st.error(f"Groq Error: {e}")
-
-    # Display whatever is in memory
-    if st.session_state.generated_date:
-        st.markdown(f"""
-        <div class="date-card">
-        {st.session_state.generated_date.replace(chr(10), '<br>')}
-        </div>
-        """, unsafe_allow_html=True)
