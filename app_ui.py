@@ -183,6 +183,12 @@ def get_backup_date(duration, vibe):
 # --- APP SETUP ---
 st.set_page_config(page_title="LDR Dashboard", page_icon="❤️", layout="wide", initial_sidebar_state="collapsed")
 
+# --- 🚀 SESSION STATE INITIALIZATION (The Glitch Fix) ---
+if 'generated_letter' not in st.session_state:
+    st.session_state.generated_letter = None
+if 'generated_date' not in st.session_state:
+    st.session_state.generated_date = None
+
 # --- 🎨 VISUAL STYLING (CSS FIXED) ---
 st.markdown("""
 <style>
@@ -456,31 +462,34 @@ with tab1:
                         st.success("Posted!")
                         st.rerun()
 
-# --- TAB 2: LOVE LETTER ---
+# --- TAB 2: LOVE LETTER (WITH MEMORY FIX) ---
 with tab2:
     st.markdown("### ✨ Need a little love?")
     st.write("Pick a vibe:")
     
-    vibe = None
-    if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
-    if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
-    if st.button("🌧️ Bad Day", use_container_width=True): vibe = "She had a hard day, comfort her"
-    if st.button("🔥 Flirty", use_container_width=True): vibe = "Feeling flirty and romantic"
+    # We use separate if-statements for buttons to set session state
+    if st.button("🥺 Missing You", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("Missing you deeply")
+    
+    if st.button("🥰 Just Because", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("Just wanted to say I love you")
+        
+    if st.button("🌧️ Bad Day", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("She had a hard day, comfort her")
+        
+    if st.button("🔥 Flirty", use_container_width=True): 
+        st.session_state.generated_letter = get_ai_letter("Feeling flirty and romantic")
 
-    if vibe:
-        with st.spinner("Penning a note..."):
-            try:
-                content = get_ai_letter(vibe)
-                st.markdown(f"""
-<div class="love-note">
-{content.replace(chr(10), '<br>')}
-<div class="note-signature">- Forever yours, Veer</div>
-</div>
-""", unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Groq Error: {e}")
+    # Display whatever is in memory
+    if st.session_state.generated_letter:
+        st.markdown(f"""
+        <div class="love-note">
+        {st.session_state.generated_letter.replace(chr(10), '<br>')}
+        <div class="note-signature">- Forever yours, Veer</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-# --- TAB 3: DATE PLANNER ---
+# --- TAB 3: DATE PLANNER (WITH MEMORY FIX) ---
 with tab3:
     st.header("The Teleport Deck 🎲")
     st.write("Let the AI plan your perfect virtual date.")
@@ -493,11 +502,15 @@ with tab3:
     if st.button("Plan Our Date 🎟️", use_container_width=True):
         with st.spinner("Thinking..."):
             try:
-                idea = get_ai_date(date_duration, date_vibe)
-                st.markdown(f"""
-<div class="date-card">
-{idea.replace(chr(10), '<br>')}
-</div>
-""", unsafe_allow_html=True)
+                # Save result to session state memory
+                st.session_state.generated_date = get_ai_date(date_duration, date_vibe)
             except Exception as e:
                 st.error(f"Groq Error: {e}")
+
+    # Display whatever is in memory
+    if st.session_state.generated_date:
+        st.markdown(f"""
+        <div class="date-card">
+        {st.session_state.generated_date.replace(chr(10), '<br>')}
+        </div>
+        """, unsafe_allow_html=True)
