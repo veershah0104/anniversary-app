@@ -40,6 +40,25 @@ def generate_groq_response(system_prompt, user_prompt):
     except Exception as e:
         return f"AI Error: {str(e)}"
 
+# --- 📸 IMAGE UPLOAD ENGINE (ImgBB) ---
+def upload_to_imgbb(image_file):
+    """Uploads binary image data to ImgBB and returns the URL."""
+    api_key = st.secrets.get("IMGBB_API_KEY")
+    if not api_key:
+        st.error("⚠️ Missing ImgBB API Key in Secrets.")
+        return None
+
+    try:
+        payload = {"key": api_key}
+        # ImgBB expects the file to be sent as 'image'
+        files = {"image": image_file.getvalue()}
+        response = requests.post("https://api.imgbb.com/1/upload", params=payload, files=files)
+        data = response.json()
+        return data["data"]["url"]
+    except Exception as e:
+        st.error(f"Upload Failed: {e}")
+        return None
+
 # --- ☁️ GOOGLE SHEETS DATABASE (The New Sync Logic) ---
 def get_db_connection():
     return st.connection("gsheets", type=GSheetsConnection)
@@ -56,7 +75,10 @@ def load_db():
         for _, row in df.iterrows():
             # Handle potential empty rows
             if pd.notna(row['User']):
-                db[row['User']] = {
+                # FIX: Force capitalization (veer -> Veer) so it matches the UI keys
+                user_key = str(row['User']).strip().capitalize()
+                
+                db[user_key] = {
                     "mood": row['Mood'],
                     "rating": int(row['Rating']) if pd.notna(row['Rating']) else 5,
                     "photo": row['Photo'] if pd.notna(row['Photo']) else None
@@ -64,7 +86,7 @@ def load_db():
         return db
     except Exception as e:
         # Fallback if sheet fails so app doesn't crash
-        return {"Veer": {"mood": "Offline", "rating": 5}, "Rishi": {"mood": "Offline", "rating": 5}}
+        return {"Veer": {"mood": "Offline", "rating": 5, "photo": None}, "Rishi": {"mood": "Offline", "rating": 5, "photo": None}}
 
 def save_db(user, mood, rating, photo=None):
     """Writes specific user update to Google Sheet"""
@@ -73,8 +95,8 @@ def save_db(user, mood, rating, photo=None):
         df = conn.read(worksheet="Sheet1", usecols=[0, 1, 2, 3], ttl=0)
         
         # Identify Row Index (Veer=0, Rishi=1)
-        # This assumes the sheet is pre-filled with Veer in row 2 and Rishi in row 3
-        idx = 0 if user == "Veer" else 1
+        # We capitalize the input user to ensure we find the right match if needed
+        idx = 0 if user.capitalize() == "Veer" else 1
         
         # Update values
         df.at[idx, "Mood"] = mood
@@ -388,13 +410,57 @@ with col_info:
 
 # 5. FEATURES TABS
 st.divider()
-tab1, tab2 = st.tabs(["💌 Anytime Love Letter", "🎲 AI Date Planner"])
+tab1, tab2, tab3 = st.tabs(["📸 Locket", "💌 Anytime Love Letter", "🎲 AI Date Planner"])
 
+# --- TAB 1: LOCKET (NEW) ---
 with tab1:
+    st.markdown("### 📸 Live Locket")
+    
+    # Display Existing Photos
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        st.write("**Veer's View**")
+        v_photo = db.get("Veer", {}).get("photo")
+        if v_photo: st.image(v_photo, use_container_width=True)
+        else: st.info("No photo yet")
+    with col_p2:
+        st.write("**Rishi's View**")
+        r_photo = db.get("Rishi", {}).get("photo")
+        if r_photo: st.image(r_photo, use_container_width=True)
+        else: st.info("No photo yet")
+        
+    st.divider()
+    
+    # Upload New Photo
+    st.write("#### 🤳 Update Your Locket")
+    photo_input = st.camera_input("Take a pic", label_visibility="collapsed")
+    
+    if photo_input:
+        # Selector for who is posting (Default to Veer for now, or add radio)
+        poster = st.radio("Posting as:", ["Veer", "Rishi"], horizontal=True, key="poster_radio")
+        
+        if st.button("Post to Locket 📨", use_container_width=True):
+            with st.spinner("Uploading to cloud..."):
+                # 1. Upload to ImgBB
+                img_url = upload_to_imgbb(photo_input)
+                
+                if img_url:
+                    # 2. Save URL to Google Sheet (re-using save_db logic but only updating photo)
+                    # We need to fetch current mood/rating to avoid overwriting them with blanks
+                    current_data = db.get(poster, {})
+                    curr_mood = current_data.get("mood", "Updated Photo")
+                    curr_rate = current_data.get("rating", 5)
+                    
+                    success = save_db(poster, curr_mood, curr_rate, photo=img_url)
+                    if success:
+                        st.success("Posted!")
+                        st.rerun()
+
+# --- TAB 2: LOVE LETTER ---
+with tab2:
     st.markdown("### ✨ Need a little love?")
     st.write("Pick a vibe:")
     
-    # Updated: Full-width stacked buttons
     vibe = None
     if st.button("🥺 Missing You", use_container_width=True): vibe = "Missing you deeply"
     if st.button("🥰 Just Because", use_container_width=True): vibe = "Just wanted to say I love you"
@@ -414,7 +480,8 @@ with tab1:
             except Exception as e:
                 st.error(f"Groq Error: {e}")
 
-with tab2:
+# --- TAB 3: DATE PLANNER ---
+with tab3:
     st.header("The Teleport Deck 🎲")
     st.write("Let the AI plan your perfect virtual date.")
     col_d1, col_d2 = st.columns(2)
